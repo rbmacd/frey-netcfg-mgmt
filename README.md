@@ -10,13 +10,10 @@
 1. [Architecture Overview](#architecture-overview)
 2. [Prerequisites](#prerequisites)
 3. [Repository Setup](#repository-setup)
-4. [Configuration Files](#configuration-files)
-5. [Templates](#templates)
-6. [Playbooks](#playbooks)
-7. [AWX Configuration](#awx-configuration)
-8. [NetBox Integration](#netbox-integration)
-9. [Testing & Validation](#testing--validation)
-10. [Workflow](#workflow)
+4. [AWX Configuration](#awx-configuration)
+5. [NetBox Integration](#netbox-integration)
+6. [Testing & Validation](#testing--validation)
+7. [Workflow](#workflow)
 
 ---
 
