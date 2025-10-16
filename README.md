@@ -1,7 +1,7 @@
 # Frey Network Config Management - Setup Guide
 ## AWX + NetBox + Ansible + Jinja2 Integration
 
-**Purpose**: Centralized configuration management for network devices using NetBox as source of truth and AWX for execution. Part of the Frey project initiative.
+**Purpose**: Examples of centralized configuration management for network devices using NetBox as source of truth and AWX for execution. Part of the Frey project initiative.
 
 ---
 
