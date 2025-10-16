@@ -1,0 +1,20 @@
+# Ansible
+*.retry
+.vault_pass
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Configs - Backup live configs but not sensitive data
+configs/backup/*.cfg
+*.log
+
+# Environment
+.env
+*.secret
+
+# IDE
+.vscode/

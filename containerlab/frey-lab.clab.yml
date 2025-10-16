@@ -1,0 +1,83 @@
+name: frey-netcfg-lab
+
+# Management network configuration
+mgmt:
+  network: frey-mgmt
+  ipv4-subnet: 172.20.20.0/24
+
+topology:
+  nodes:
+    # Spine Switches - BGP Route Reflectors for EVPN
+    spine01:
+      kind: ceos
+      image: ceos:4.34.2.1F
+      mgmt-ipv4: 172.20.20.2
+      startup-config: ../configs/generated/spine01.cfg
+      ports:
+        - "8001:443"  # HTTPS access
+      env:
+        INTFTYPE: et
+      
+    spine02:
+      kind: ceos
+      image: ceos:4.34.2.1F
+      mgmt-ipv4: 172.20.20.3
+      startup-config: ../configs/generated/spine02.cfg
+      ports:
+        - "8002:443"
+      env:
+        INTFTYPE: et
+    
+    # Leaf Switches - VTEPs for VXLAN
+    leaf01:
+      kind: ceos
+      image: ceos:4.34.2.1F
+      mgmt-ipv4: 172.20.20.4
+      startup-config: ../configs/generated/leaf01.cfg
+      ports:
+        - "8003:443"
+      env:
+        INTFTYPE: et
+      
+    leaf02:
+      kind: ceos
+      image: ceos:4.34.2.1F
+      mgmt-ipv4: 172.20.20.5
+      startup-config: ../configs/generated/leaf02.cfg
+      ports:
+        - "8004:443"
+      env:
+        INTFTYPE: et
+
+    # Optional: Test hosts for end-to-end validation
+    host01:
+      kind: linux
+      image: alpine:latest
+      mgmt-ipv4: 172.20.20.10
+      exec:
+        - ip addr add 10.10.10.10/24 dev eth1
+        - ip link set dev eth1 up
+      
+    host02:
+      kind: linux
+      image: alpine:latest
+      mgmt-ipv4: 172.20.20.11
+      exec:
+        - ip addr add 10.10.10.11/24 dev eth1
+        - ip link set dev eth1 up
+
+  links:
+    # Spine01 to Leaf connections (IP Fabric Underlay)
+    - endpoints: ["spine01:eth1", "leaf01:eth1"]
+    - endpoints: ["spine01:eth2", "leaf02:eth1"]
+    
+    # Spine02 to Leaf connections (IP Fabric Underlay)
+    - endpoints: ["spine02:eth1", "leaf01:eth2"]
+    - endpoints: ["spine02:eth2", "leaf02:eth2"]
+    
+    # Optional: Spine to Spine link for iBGP or redundancy
+    # - endpoints: ["spine01:eth3", "spine02:eth3"]
+    
+    # Host connections for testing VXLAN/EVPN
+    - endpoints: ["leaf01:eth3", "host01:eth1"]
+    - endpoints: ["leaf02:eth3", "host02:eth1"]
