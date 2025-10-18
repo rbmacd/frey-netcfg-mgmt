@@ -96,6 +96,41 @@ ansible-galaxy collection install arista.eos
 ansible-galaxy collection install netbox.netbox
 ```
 
+### Helper Scripts
+
+**NetBox Seeding Script** (`scripts/seed_netbox_from_clab.py`):
+
+This script automates the process of populating NetBox from a containerlab topology file. It creates:
+- Devices with appropriate roles (auto-detected from hostname patterns)
+- Interfaces and physical links
+- Management IP addresses
+- Platform assignments (Arista EOS)
+- **Config context with complete BGP/EVPN/VXLAN configuration**
+
+**Installation**:
+```bash
+# Dependencies already in requirements.txt
+pip install -r requirements.txt
+
+# Place script in scripts/ directory
+# Available at: https://github.com/rbmacd/frey
+```
+
+**Usage**:
+```bash
+export NETBOX_URL=https://netbox.example.com
+export NETBOX_APITOKEN=your_token
+
+python scripts/seed_netbox_from_clab.py containerlab/frey-lab.clab.yml
+```
+
+**Configuration Generated**:
+- **Spines**: BGP AS 65000, Router IDs 10.255.255.1+, EVPN route reflectors
+- **Leafs**: BGP AS 65001+, Router IDs 10.255.255.11+, VTEP configuration
+- **VLANs**: Default VLANs 10 (DATA), 20 (VOICE), 30 (GUEST)
+- **VNI Mappings**: VLAN+10000 (VLAN 10 → VNI 10010)
+- **BGP Neighbors**: Auto-discovered from topology links
+
 ---
 
 ## Repository Setup
@@ -115,6 +150,7 @@ mkdir -p configs/generated
 mkdir -p group_vars
 mkdir -p host_vars
 mkdir -p inventory
+mkdir -p scripts
 mkdir -p containerlab
 mkdir -p docs
 
@@ -126,6 +162,9 @@ touch requirements.txt
 
 # Create required group_vars file
 touch group_vars/platforms_eos.yml
+
+# Note: seed_netbox_from_clab.py should be placed in scripts/
+# Download from: https://github.com/rbmacd/frey or create from provided code
 
 # Optional: Create group_vars/all.yml if you need organizational metadata
 # or are in a migration period. For pure NetBox implementations, omit this file.
@@ -171,8 +210,11 @@ frey-netcfg-mgmt/
 ├── inventory/
 │   └── hosts.yml                      # Local testing inventory
 │
+├── scripts/                           # Helper scripts
+│   └── seed_netbox_from_clab.py       # Seed NetBox from containerlab
+│
 ├── containerlab/
-│   └── frey-lab.clab.yml            # Lab topology
+│   └── frey-lab.clab.yml              # Lab topology
 │
 └── docs/
     ├── AWX_SETUP.md                   # AWX configuration guide
@@ -370,9 +412,9 @@ START
 
 ### What Belongs in NetBox Config Context
 
-Config context is JSON data in NetBox that becomes variables in Ansible. Put **device-specific** or **site-specific** data here:
+Config context is JSON data in NetBox that becomes variables in Ansible. Put device-specific or site-specific data here:
 
- **Use NetBox config context for:**
+**Use NetBox config context for:**
 - VLANs and their assignments
 - Interface configurations (IP addresses, descriptions, modes)
 - Routing protocol configuration (BGP, OSPF)
@@ -381,7 +423,7 @@ Config context is JSON data in NetBox that becomes variables in Ansible. Put **d
 - QoS configurations
 - Any data that varies per device or site
 
- **Don't use NetBox config context for:**
+**Do not use NetBox config context for:**
 - Organizational banner text (use group_vars)
 - Default NTP servers that apply to all devices (use group_vars as default)
 - Ansible connection parameters (use group_vars)
@@ -1083,30 +1125,276 @@ ansible-playbook playbooks/generate_configs.yml -i inventory/hosts.yml
 cat configs/generated/spine01.cfg
 ```
 
-#### Test 3: Containerlab Testing
+### End-to-End Testing with NetBox and Containerlab
 
-Create test environment:
+**Purpose**: Test the complete production workflow (Containerlab → NetBox → AWX → Devices) in a safe lab environment.
+
+This workflow mirrors production exactly:
+1. Infrastructure defined in containerlab YAML
+2. NetBox seeded from containerlab topology
+3. AWX syncs inventory from NetBox
+4. AWX generates configs from NetBox data
+5. AWX deploys to containerlab devices (via SSH, same as production)
+
+**Prerequisites**:
+- Containerlab installed
+- NetBox instance accessible
+- AWX with NetBox dynamic inventory configured
+- Python 3.8+ with required packages
+
+#### Step 1: Seed NetBox from Containerlab
+
+The `seed_netbox_from_clab.py` script automates NetBox population:
+
+```bash
+# Set environment variables
+export NETBOX_URL=https://netbox.example.com
+export NETBOX_APITOKEN=your_token_here
+
+# Run seeding script
+python scripts/seed_netbox_from_clab.py containerlab/frey-lab.clab.yml
+```
+
+**What the script creates in NetBox**:
+- **Devices**: spine01, spine02, leaf01, leaf02
+- **Device Roles**: Spine, Leaf (auto-detected from hostname)
+- **Platform**: Arista EOS
+- **Site**: frey-netcfg-lab (from containerlab name)
+- **Interfaces**: Management1, eth1, eth2, etc.
+- **Links**: Cables between devices per topology
+- **Management IPs**: 172.20.20.2-5 (primary IPs)
+- **Config Context**: Complete BGP/EVPN/VXLAN configuration
+  - Spines: BGP route reflectors with EVPN overlay
+  - Leafs: VTEP configuration with VXLAN, VLANs, VNI mappings
+  - Auto-generated BGP neighbors from topology
+  - Router IDs: 10.255.255.1 (spine01), 10.255.255.11 (leaf01), etc.
+  - ASNs: 65000 (spines), 65001+ (leafs)
+
+**Script Options**:
+```bash
+# Disable SSL verification (for self-signed certs)
+python scripts/seed_netbox_from_clab.py --no-ssl-verify containerlab/frey-lab.clab.yml
+
+# Skip config context generation (infrastructure only)
+python scripts/seed_netbox_from_clab.py --skip-config-context containerlab/frey-lab.clab.yml
+```
+
+#### Step 2: Deploy Containerlab
+
+Deploy the lab with minimal bootstrap configuration:
 
 ```bash
 cd containerlab
-
-# Deploy lab (requires cEOS image)
 sudo containerlab deploy -t frey-lab.clab.yml
+```
 
-# Verify containers are running
+**Devices boot with**:
+- Factory default configuration
+- Management IP configured automatically
+- SSH enabled (cEOS default)
+- No routing, VLANs, or BGP configured
+
+**Verify containerlab deployment**:
+```bash
+# Check running containers
 sudo containerlab inspect -t frey-lab.clab.yml
 
-# Test connectivity
-ssh admin@172.20.20.2  # Password: admin
+# Test SSH access
+ssh admin@172.20.20.2  # Default password: admin
 
-# Destroy lab when done
-sudo containerlab destroy -t frey-lab.clab.yml
+# Verify minimal config
+show running-config
 ```
+
+#### Step 3: Sync AWX Inventory from NetBox
+
+In AWX, your NetBox dynamic inventory automatically discovers the new devices:
+
+**Option A - Automatic Sync**:
+- If "Update on Launch" is enabled, inventory syncs when jobs run
+
+**Option B - Manual Sync**:
+1. Navigate to **Resources → Inventories**
+2. Select your NetBox inventory
+3. Click **Sync** button
+4. Wait for completion
+
+**Verify devices appear**:
+- Go to **Hosts** tab
+- Confirm: spine01, spine02, leaf01, leaf02
+- Go to **Groups** tab
+- Confirm: device_roles_spine, device_roles_leaf, platforms_eos, sites_frey_netcfg_lab
+
+#### Step 4: Generate Configurations in AWX
+
+Run the configuration generation job:
+
+1. Navigate to **Resources → Templates**
+2. Select `Generate - Arista Configs`
+3. Click **Launch**
+4. Set **Limit**: `sites_frey_netcfg_lab` (targets only containerlab devices)
+5. Click **Next** → **Launch**
+
+**What happens**:
+- AWX reads NetBox config context (BGP, VXLAN, VLANs)
+- Jinja2 templates render complete configurations
+- Configs include full EVPN/VXLAN fabric configuration
+- Files saved in AWX artifacts
+
+**Review generated configs**:
+- Check AWX job output
+- Download artifacts to review configurations
+
+#### Step 5: Deploy to Containerlab (Check Mode First)
+
+Test deployment without making changes:
+
+1. Select `Deploy - Arista Configs`
+2. Click **Launch**
+3. Set **Limit**: `sites_frey_netcfg_lab`
+4. Enable **Check Mode** (dry run)
+5. Click **Next** → **Launch**
+
+**Review the output** - what would change on each device.
+
+#### Step 6: Deploy to Containerlab (Live)
+
+Deploy the full configuration:
+
+1. Select `Deploy - Arista Configs`
+2. Click **Launch**
+3. Set **Limit**: `sites_frey_netcfg_lab`
+4. **Do NOT** enable Check Mode
+5. Click **Next** → **Launch**
+
+**What happens**:
+- AWX connects via SSH to 172.20.20.2-5
+- Uses `arista.eos.eos_config` module
+- Pushes complete BGP/EVPN/VXLAN configuration
+- Devices now have full production-like config
+
+#### Step 7: Verify VXLAN/EVPN Fabric
+
+SSH to devices and verify the deployment:
+
+```bash
+# Connect to spine
+ssh admin@172.20.20.2
+
+# Verify BGP underlay
+show ip bgp summary
+show ip route bgp
+
+# Verify EVPN overlay
+show bgp evpn summary
+show bgp evpn
+
+# On leaf switches
+ssh admin@172.20.20.4
+
+# Verify VXLAN
+show vxlan vtep
+show vxlan vni
+show vxlan address-table
+
+# Verify VLANs
+show vlan
+
+# Check interfaces
+show ip interface brief
+```
+
+### Complete Workflow Summary
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. Create/Update containerlab/frey-lab.clab.yml           │
+│     (defines nodes and links only)                          │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  2. Run seed_netbox_from_clab.py                            │
+│     Creates devices, interfaces, links, config context      │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  3. Deploy containerlab                                     │
+│     Devices boot with factory defaults                      │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  4. AWX syncs inventory from NetBox                         │
+│     Discovers devices automatically                          │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  5. AWX generates configs from NetBox data                  │
+│     Templates + Config Context = Full Configuration         │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  6. AWX deploys to containerlab devices                     │
+│     Same SSH-based deployment as production                 │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  7. Verify EVPN/VXLAN fabric is operational                │
+│     Full production-like network in containerlab            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Benefits**:
+- **Identical to Production**: Same NetBox → AWX → Device workflow
+- **Safe Testing**: Containerlab environment, not production
+- **Full Automation**: Single YAML file → Complete fabric
+- **Config Context Testing**: Validates templates against real NetBox data
+- **Rapid Iteration**: Destroy and rebuild in minutes
+
+#### Cleanup
+
+When finished testing:
+
+```bash
+# Destroy containerlab
+cd containerlab
+sudo containerlab destroy -t frey-lab.clab.yml
+
+# Optional: Clean up NetBox
+# (manually delete devices/site or use NetBox UI)
+```
+
+### Test 3: Containerlab Testing (Legacy Local Method)
+
+**Note**: This method is deprecated in favor of the NetBox-driven workflow above.
+
+For quick local testing without NetBox/AWX:
+
+```bash
+# Generate configs locally first
+ansible-playbook playbooks/generate_configs.yml -i inventory/hosts.yml
+
+# Then deploy containerlab with pre-generated configs
+# (Requires updating clab YAML to reference startup-config files)
+cd containerlab
+sudo containerlab deploy -t frey-lab.clab.yml
+```
+
+This approach bypasses NetBox/AWX and loads configs directly from files.
 
 ### containerlab/frey-lab.clab.yml
 
 ```yaml
 name: frey-netcfg-lab
+
+mgmt:
+  network: frey-mgmt
+  ipv4-subnet: 172.20.20.0/24
 
 topology:
   nodes:
@@ -1114,25 +1402,21 @@ topology:
       kind: ceos
       image: ceos:latest
       mgmt-ipv4: 172.20.20.2
-      startup-config: ../configs/generated/spine01.cfg
       
     spine02:
       kind: ceos
       image: ceos:latest
       mgmt-ipv4: 172.20.20.3
-      startup-config: ../configs/generated/spine02.cfg
       
     leaf01:
       kind: ceos
       image: ceos:latest
       mgmt-ipv4: 172.20.20.4
-      startup-config: ../configs/generated/leaf01.cfg
       
     leaf02:
       kind: ceos
       image: ceos:latest
       mgmt-ipv4: 172.20.20.5
-      startup-config: ../configs/generated/leaf02.cfg
 
   links:
     # Spine to Leaf connections (IP Fabric Underlay)
@@ -1140,17 +1424,15 @@ topology:
     - endpoints: ["spine01:eth2", "leaf02:eth1"]
     - endpoints: ["spine02:eth1", "leaf01:eth2"]
     - endpoints: ["spine02:eth2", "leaf02:eth2"]
-    
-    # Optional: Spine to Spine link for redundancy
-    # - endpoints: ["spine01:eth3", "spine02:eth3"]
 ```
 
-**Note on VXLAN/EVPN Testing in Containerlab:**
-- VXLAN encapsulation works in containerlab
-- EVPN control plane functions normally
-- Full fabric testing is possible with cEOS
-- Verify overlay connectivity between leaf switches
-- Test MAC/IP learning across the fabric
+**Note**: This topology file contains NO configuration - devices boot with factory defaults. The `seed_netbox_from_clab.py` script reads this file to populate NetBox, then AWX deploys full configurations.
+
+**Why this approach:**
+- Containerlab defines only infrastructure (nodes and links)
+- NetBox becomes the source of truth (seeded from containerlab)
+- AWX deploys configurations (same workflow as production)
+- Tests the complete end-to-end automation pipeline
 
 ### AWX Testing
 
@@ -1259,6 +1541,8 @@ show vxlan flood vtep
 ## Workflow
 
 ### Standard Operating Procedure
+
+**Note**: For end-to-end testing with containerlab, see [Testing & Validation](#testing--validation) section for the complete NetBox-driven workflow.
 
 #### 1. Update NetBox (Source of Truth)
 
@@ -1695,11 +1979,15 @@ show running-config section vxlan
 ### Immediate Actions
 
 1. Clone and set up repository structure
-2. Configure AWX project pointing to your Git repo
-3. Create job templates in AWX
-4. Test with one device using limits
-5. Verify generated configurations
-6. Set up scheduled backups
+2. Install Python dependencies and Ansible collections
+3. Set up containerlab environment with cEOS image
+4. Configure NetBox instance (or use existing)
+5. Configure AWX with NetBox dynamic inventory
+6. Test end-to-end workflow:
+   - Seed NetBox from containerlab YAML
+   - Deploy containerlab with factory defaults
+   - AWX generates and deploys configs
+7. Verify VXLAN/EVPN fabric operation
 
 ### Short Term Enhancements
 
@@ -1782,6 +2070,47 @@ show running-config section vxlan
 **Last Updated**: 2025-10-16  
 **Project**: Frey Network Config Management  
 **Author**: Rob MacDonald
+
+---
+
+## Quick Start Guide
+
+### Complete End-to-End Workflow (5 Minutes)
+
+For the fastest path from zero to a running VXLAN/EVPN fabric:
+
+```bash
+# 1. Clone repository
+git clone https://github.com/rbmacd/frey-netcfg-mgmt.git
+cd frey-netcfg-mgmt
+
+# 2. Install dependencies
+pip install -r requirements.txt
+ansible-galaxy collection install arista.eos netbox.netbox
+
+# 3. Set NetBox credentials
+export NETBOX_URL=https://netbox.example.com
+export NETBOX_APITOKEN=your_token_here
+
+# 4. Seed NetBox from containerlab topology
+python scripts/seed_netbox_from_clab.py containerlab/frey-lab.clab.yml
+
+# 5. Deploy containerlab
+cd containerlab
+sudo containerlab deploy -t frey-lab.clab.yml
+
+# 6. In AWX UI:
+#    - Sync NetBox inventory
+#    - Run "Generate - Arista Configs" (limit: sites_frey_netcfg_lab)
+#    - Run "Deploy - Arista Configs" (limit: sites_frey_netcfg_lab)
+
+# 7. Verify
+ssh admin@172.20.20.2  # password: admin
+show ip bgp summary
+show bgp evpn summary
+```
+
+**Result**: Fully functional spine-leaf VXLAN/EVPN fabric running in containerlab, configured via NetBox and AWX.
 
 ---
 

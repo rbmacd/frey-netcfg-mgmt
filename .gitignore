@@ -18,3 +18,10 @@ configs/backup/*.cfg
 
 # IDE
 .vscode/
+
+# netbox-helper venv management
+scripts/netbox-helpers/*
+!scripts/netbox-helpers/requirements.txt
+!scripts/netbox-helpers/seed-netbox-from-clab.py
+!scripts/netbox-helpers/bootstrap.sh
+clab_netbox_sync.log
