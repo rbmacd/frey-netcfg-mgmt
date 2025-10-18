@@ -5,15 +5,62 @@
 
 ---
 
+## Quick Start Guide
+
+### Complete End-to-End Workflow (5 Minutes)
+
+For the fastest path from zero to a running VXLAN/EVPN fabric:
+
+```bash
+# 1. Clone repository
+git clone https://github.com/yourusername/frey-netcfg-mgmt.git
+cd frey-netcfg-mgmt
+
+# 2. Install dependencies
+pip install -r requirements.txt
+ansible-galaxy collection install arista.eos netbox.netbox
+
+# 3. Set NetBox credentials
+export NETBOX_URL=https://netbox.example.com
+export NETBOX_APITOKEN=your_token_here
+
+# 4. Seed NetBox from containerlab topology
+python scripts/seed_netbox_from_clab.py containerlab/frey-lab.clab.yml
+
+# 5. Deploy containerlab
+cd containerlab
+sudo containerlab deploy -t frey-lab.clab.yml
+
+# 6. In AWX UI:
+#    - Sync NetBox inventory
+#    - Run "Generate - Arista Configs" (limit: sites_frey_netcfg_lab)
+#    - Run "Deploy - Arista Configs" (limit: sites_frey_netcfg_lab)
+
+# 7. Verify
+ssh admin@172.20.20.2  # password: admin
+show ip bgp summary
+show bgp evpn summary
+```
+
+**Result**: Fully functional spine-leaf VXLAN/EVPN fabric running in containerlab, configured via NetBox and AWX.
+
+---
+
 ## Table of Contents
 
-1. [Architecture Overview](#architecture-overview)
-2. [Prerequisites](#prerequisites)
-3. [Repository Setup](#repository-setup)
-4. [AWX Configuration](#awx-configuration)
-5. [NetBox Integration](#netbox-integration)
-6. [Testing & Validation](#testing--validation)
-7. [Workflow](#workflow)
+1. [Quick Start Guide](#quick-start-guide)
+2. [Architecture Overview](#architecture-overview)
+3. [Prerequisites](#prerequisites)
+4. [Repository Setup](#repository-setup)
+5. [AWX Configuration](#awx-configuration)
+6. [NetBox Integration](#netbox-integration)
+7. [Testing & Validation](#testing--validation)
+8. [Workflow](#workflow)
+9. [Troubleshooting](#troubleshooting)
+10. [Best Practices](#best-practices)
+11. [Quick Reference](#quick-reference)
+12. [Next Steps](#next-steps)
+13. [Additional Resources](#additional-resources)
 
 ---
 
@@ -113,7 +160,7 @@ This script automates the process of populating NetBox from a containerlab topol
 pip install -r requirements.txt
 
 # Place script in scripts/ directory
-# Available at: https://github.com/rbmacd/frey
+# Available at: https://github.com/rbmacd/frey-netcfg-mgmt/
 ```
 
 **Usage**:
@@ -233,7 +280,7 @@ frey-netcfg-mgmt/
    - **Name**: `Frey Network Config Management`
    - **Organization**: Your organization
    - **Source Control Type**: `Git`
-   - **Source Control URL**: `https://github.com/yourusername/frey-netcfg-mgmt.git`
+   - **Source Control URL**: `https://github.com/rbmacd/frey-netcfg-mgmt.git`
    - **Source Control Branch/Tag/Commit**: `main`
    - **Options**: Update Revision on Launch
    - **Options**: Clean (removes any local modifications)
@@ -1389,43 +1436,6 @@ This approach bypasses NetBox/AWX and loads configs directly from files.
 
 ### containerlab/frey-lab.clab.yml
 
-```yaml
-name: frey-netcfg-lab
-
-mgmt:
-  network: frey-mgmt
-  ipv4-subnet: 172.20.20.0/24
-
-topology:
-  nodes:
-    spine01:
-      kind: ceos
-      image: ceos:latest
-      mgmt-ipv4: 172.20.20.2
-      
-    spine02:
-      kind: ceos
-      image: ceos:latest
-      mgmt-ipv4: 172.20.20.3
-      
-    leaf01:
-      kind: ceos
-      image: ceos:latest
-      mgmt-ipv4: 172.20.20.4
-      
-    leaf02:
-      kind: ceos
-      image: ceos:latest
-      mgmt-ipv4: 172.20.20.5
-
-  links:
-    # Spine to Leaf connections (IP Fabric Underlay)
-    - endpoints: ["spine01:eth1", "leaf01:eth1"]
-    - endpoints: ["spine01:eth2", "leaf02:eth1"]
-    - endpoints: ["spine02:eth1", "leaf01:eth2"]
-    - endpoints: ["spine02:eth2", "leaf02:eth2"]
-```
-
 **Note**: This topology file contains NO configuration - devices boot with factory defaults. The `seed_netbox_from_clab.py` script reads this file to populate NetBox, then AWX deploys full configurations.
 
 **Why this approach:**
@@ -2066,51 +2076,8 @@ show running-config section vxlan
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: 2025-10-16  
 **Project**: Frey Network Config Management  
 **Author**: Rob MacDonald
-
----
-
-## Quick Start Guide
-
-### Complete End-to-End Workflow (5 Minutes)
-
-For the fastest path from zero to a running VXLAN/EVPN fabric:
-
-```bash
-# 1. Clone repository
-git clone https://github.com/rbmacd/frey-netcfg-mgmt.git
-cd frey-netcfg-mgmt
-
-# 2. Install dependencies
-pip install -r requirements.txt
-ansible-galaxy collection install arista.eos netbox.netbox
-
-# 3. Set NetBox credentials
-export NETBOX_URL=https://netbox.example.com
-export NETBOX_APITOKEN=your_token_here
-
-# 4. Seed NetBox from containerlab topology
-python scripts/seed_netbox_from_clab.py containerlab/frey-lab.clab.yml
-
-# 5. Deploy containerlab
-cd containerlab
-sudo containerlab deploy -t frey-lab.clab.yml
-
-# 6. In AWX UI:
-#    - Sync NetBox inventory
-#    - Run "Generate - Arista Configs" (limit: sites_frey_netcfg_lab)
-#    - Run "Deploy - Arista Configs" (limit: sites_frey_netcfg_lab)
-
-# 7. Verify
-ssh admin@172.20.20.2  # password: admin
-show ip bgp summary
-show bgp evpn summary
-```
-
-**Result**: Fully functional spine-leaf VXLAN/EVPN fabric running in containerlab, configured via NetBox and AWX.
 
 ---
 
